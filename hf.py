@@ -37,6 +37,7 @@ class ModelManager:
     """Manages AI/ML models across different platforms."""
 
     server: str
+    api_key: str
     threads: int
     home: Path
 
@@ -50,6 +51,7 @@ class ModelManager:
     def __init__(self):
         """Initialize paths and configuration."""
         self.server = "127.0.0.1"
+        self.api_key = "sk-1234"
         self.threads = 24
         self.home = Path.home()
 
@@ -482,6 +484,27 @@ models:
         config_path = self.gguf_models / "llama-swap.yaml"
         _ = subprocess.run(["llama-swap", "--config", str(config_path)], check=True)
 
+    def get_litellm_models(self) -> list[tuple[str, str]]:
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        # Disable SSL verification (equivalent to curl -k flag)
+        response = requests.get(
+            f"https://{self.server}/litellm/model/info",
+            headers=headers,
+            verify=False,
+            allow_redirects=False,
+        )
+        response.raise_for_status()
+        return [
+            (
+                item.get("model_name", ""),
+                item.get("model_info", {}).get("description", ""),
+            )
+            for item in response.json().get("data", [])
+        ]
+
     def get_models(self) -> list[str]:
         """Get list of available models from the server."""
         try:
@@ -542,6 +565,27 @@ models:
       :models '(
 {model_list}
                 ))"""
+
+    def generate_gptel_litellm_config(self) -> str:
+        """Generate GPTel Emacs configuration."""
+        models = self.get_litellm_models()
+        litellm_model_list = "\n".join(
+            [
+                f"""
+                ({model}
+                 :description "{desc}"
+                 :capabilities (media tool json url)
+                 :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp"))"""
+                for (model, desc) in models
+            ]
+        )
+
+        return f"""    (gptel-make-openai "LiteLLM"
+      :host "vulcan"
+      :protocol "https"
+      :endpoint "/litellm/v1/chat/completions"
+      :key gptel-api-key
+      :models '({litellm_model_list}))"""
 
     def get_status(self) -> None:
         """Get llama-swap status."""
@@ -771,6 +815,9 @@ def main():
         "--server", type=str, default="192.168.50.5", help="Server to connect to"
     )
     _ = parser.add_argument(
+        "--api-key", type=str, default="sk-1234", help="API Key to use with server"
+    )
+    _ = parser.add_argument(
         "--threads", type=int, default=24, help="Number of performance threads to use"
     )
 
@@ -824,6 +871,9 @@ def main():
     _ = subparsers.add_parser("huggingface-models", help="list HuggingFace models")
     _ = subparsers.add_parser("model-files", help="list all GGUF model files")
     _ = subparsers.add_parser("gptel", help="Generate GPTel configuration")
+    _ = subparsers.add_parser(
+        "gptel-litellm", help="Generate GPTel LiteLLM configuration"
+    )
     _ = subparsers.add_parser("status", help="Check llama-swap status")
     _ = subparsers.add_parser("unload", help="Unload current model")
     _ = subparsers.add_parser("logs", help="Stream llama-swap logs")
@@ -893,6 +943,8 @@ def main():
             print(file)
     elif command == "gptel":
         print(manager.generate_gptel_config())
+    elif command == "gptel-litellm":
+        print(manager.generate_gptel_litellm_config())
     elif command == "status":
         manager.get_status()
     elif command == "unload":
@@ -927,4 +979,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # Suppress SSL warnings when verify=False
+    import urllib3
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
     main()
