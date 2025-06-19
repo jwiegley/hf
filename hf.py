@@ -491,7 +491,7 @@ models:
         }
         # Disable SSL verification (equivalent to curl -k flag)
         response = requests.get(
-            f"https://{self.server}/litellm/model/info",
+            f"http://{self.server}/litellm/model/info",
             headers=headers,
             verify=False,
             allow_redirects=False,
@@ -582,7 +582,7 @@ models:
 
         return f"""    (gptel-make-openai "LiteLLM"
       :host "vulcan"
-      :protocol "https"
+      :protocol "http"
       :endpoint "/litellm/v1/chat/completions"
       :key gptel-api-key
       :models '({litellm_model_list}))"""
