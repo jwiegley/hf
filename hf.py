@@ -36,7 +36,10 @@ class ModelConfig:
 class ModelManager:
     """Manages AI/ML models across different platforms."""
 
+    protocol: str
     server: str
+    port: int
+    prefix: str
     api_key: str
     threads: int
     home: Path
@@ -50,7 +53,10 @@ class ModelManager:
 
     def __init__(self):
         """Initialize paths and configuration."""
+        self.procotol = "http"
         self.server = "127.0.0.1"
+        self.port = 8080
+        self.prefix = ""
         self.api_key = "sk-1234"
         self.threads = 24
         self.home = Path.home()
@@ -259,8 +265,11 @@ class ModelManager:
             ("f32", r"f32"),
             ("fp16", r"fp16[_-]"),
             ("f16", r"f16"),
+            ("q8xl", r"[Qq]8_.*XL"),
             ("q8", r"[Qq]8_"),
+            ("q6xl", r"[Qq]6_.*XL"),
             ("q6", r"[Qq]6_"),
+            ("q5xl", r"[Qq]5_.*XL"),
             ("q5", r"[Qq]5_"),
             ("q4xl", r"[Qq]4_.*XL"),
             ("q4", r"[Qq]4_"),
@@ -305,6 +314,9 @@ class ModelManager:
 
         return None
 
+    def api_base(self) -> str:
+        return f"{self.protocol}://{self.server}:{self.port}{self.prefix}"
+
     def generate_json(
         self, model: str
     ) -> dict[str, str | int | bool | list[str]] | None:
@@ -330,7 +342,7 @@ class ModelManager:
             "title": f"Hera → {name}",
             "description": "",
             "iconUrl": "",
-            "endpoint": f"https://{self.server}:8443/v1/chat/completions",
+            "endpoint": f"{self.api_base()}/v1/chat/completions",
             "modelID": name,
             "apiType": "openai",
             "contextLength": int(context),
@@ -390,11 +402,9 @@ class ModelManager:
     proxy: "http://127.0.0.1:${{PORT}}"
     cmd: >
       {llama_server}
-        --threads {self.threads}
         --jinja
         --no-webui
         --offline
-        --n_gpu_layers 99
         --port ${{PORT}}
         --model {gguf} {' '.join(args)}
     checkEndpoint: /health"""
@@ -491,7 +501,7 @@ models:
         }
         # Disable SSL verification (equivalent to curl -k flag)
         response = requests.get(
-            f"http://{self.server}/litellm/model/info",
+            f"{self.api_base()}/model/info",
             headers=headers,
             verify=False,
             allow_redirects=False,
@@ -508,7 +518,7 @@ models:
     def get_models(self) -> list[str]:
         """Get list of available models from the server."""
         try:
-            response = requests.get(f"http://{self.server}:8080/v1/models")
+            response = requests.get(f"{self.api_base()}/v1/models")
             data = response.json()
             models: list[str] = [item["id"] for item in data.get("data", [])]
             return sorted(models)
@@ -590,7 +600,7 @@ models:
     def get_status(self) -> None:
         """Get llama-swap status."""
         try:
-            response = requests.get(f"http://{self.server}:8080/running")
+            response = requests.get(f"{self.api_base()}/running")
             print(json.dumps(response.json(), indent=2))
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
@@ -598,7 +608,7 @@ models:
     def unload(self) -> None:
         """Unload current model."""
         try:
-            _ = requests.get(f"http://{self.server}:8080/unload")
+            _ = requests.get(f"{self.api_base()}/unload")
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
 
@@ -606,7 +616,7 @@ models:
         """Stream llama-swap logs."""
         try:
             response = requests.get(
-                f"http://{self.server}:8080/logs/stream", stream=True
+                f"{self.api_base()}/logs/stream", stream=True
             )
             for line in response.iter_lines():
                 if line:
@@ -812,7 +822,16 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     _ = parser.add_argument(
-        "--server", type=str, default="192.168.50.5", help="Server to connect to"
+        "--server", type=str, default="192.168.50.5", help="Server address to connect to"
+    )
+    _ = parser.add_argument(
+        "--port", type=int, default=8080, help="Server port to connect to"
+    )
+    _ = parser.add_argument(
+        "--protocol", type=str, default="http", help="Server protocol (http or https)"
+    )
+    _ = parser.add_argument(
+        "--prefix", type=str, default="", help="Server API prefix"
     )
     _ = parser.add_argument(
         "--api-key", type=str, default="sk-1234", help="API Key to use with server"
@@ -895,6 +914,9 @@ def main():
     # Initialize manager
     manager = ModelManager()
     manager.server = args.server
+    manager.protocol = args.protocol
+    manager.port = args.port
+    manager.prefix = args.prefix
     manager.threads = args.threads
 
     command: str = args.command
