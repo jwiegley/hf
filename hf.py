@@ -14,7 +14,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TextIO
+from typing import TextIO, final
 
 import requests
 
@@ -33,6 +33,7 @@ class ModelConfig:
     args: str = ""
 
 
+@final
 class ModelManager:
     """Manages AI/ML models across different platforms."""
 
@@ -262,9 +263,9 @@ class ModelManager:
         # Priority patterns to search
         patterns = [
             ("fp32", r"fp32[_-]"),
-            ("f32", r"f32"),
+            ("f32", r"[Ff]32"),
             ("fp16", r"fp16[_-]"),
-            ("f16", r"f16"),
+            ("f16", r"[Ff]16"),
             ("q8xl", r"[Qq]8_.*XL"),
             ("q8", r"[Qq]8_"),
             ("q6xl", r"[Qq]6_.*XL"),
@@ -273,6 +274,10 @@ class ModelManager:
             ("q5", r"[Qq]5_"),
             ("q4xl", r"[Qq]4_.*XL"),
             ("q4", r"[Qq]4_"),
+            ("q3xl", r"[Qq]3_.*XL"),
+            ("q3", r"[Qq]3_"),
+            ("q2xl", r"[Qq]2_.*XL"),
+            ("q2", r"[Qq]2_"),
         ]
 
         # Search for each pattern
@@ -515,16 +520,24 @@ models:
             for item in response.json().get("data", [])
         ]
 
-    def get_models(self) -> list[str]:
+    def add_model(self, models: dict[str, list[str]], name: str, kind: str):
+        if name in models:
+            models[name].append(kind)
+        else:
+            models[name] = [kind]
+
+    def get_models(self) -> dict[str, list[str]]:
         """Get list of available models from the server."""
         try:
             response = requests.get(f"{self.api_base()}/v1/models")
             data = response.json()
-            models: list[str] = [item["id"] for item in data.get("data", [])]
-            return sorted(models)
+            models: dict[str, list[str]] = {}
+            for item in data.get("data", []):
+                self.add_model(models, item["id"], "M")
+            return models
         except Exception as e:
             print(f"Error fetching models: {e}", file=sys.stderr)
-            return []
+            return {}
 
     def get_huggingface_models(self) -> list[str]:
         """Get list of HuggingFace models."""
@@ -565,7 +578,7 @@ models:
 
     def generate_gptel_config(self) -> str:
         """Generate GPTel Emacs configuration."""
-        models = self.get_models()
+        models = sorted(self.get_models().keys())
         model_list = "\n".join([f'                "{model}"' for model in models])
 
         return f"""    (gptel-make-openai "llama-swap"
@@ -597,6 +610,23 @@ models:
       :key gptel-api-key
       :models '({litellm_model_list}))"""
 
+    def generate_litellm_config(self) -> str:
+        """Generate LiteLLM configuration."""
+        models: list[str] = sorted(self.get_models().keys())
+        return "\n".join(
+                [
+                    f"""
+  - model_name: hera/{model}
+    litellm_params:
+      model: openai/{model}
+      litellm_credential_name: hera_llama_swap_credential
+      supports_system_message: true
+    model_info:
+      description: ""
+      supports_reasoning: True"""
+                    for model in models
+                ])
+
     def get_status(self) -> None:
         """Get llama-swap status."""
         try:
@@ -615,9 +645,7 @@ models:
     def stream_logs(self) -> None:
         """Stream llama-swap logs."""
         try:
-            response = requests.get(
-                f"{self.api_base()}/logs/stream", stream=True
-            )
+            response = requests.get(f"{self.api_base()}/logs/stream", stream=True)
             for line in response.iter_lines():
                 if line:
                     print(line.decode("utf-8"))
@@ -661,7 +689,7 @@ models:
 
             # Find GGUF file
             gguf = None
-            for pattern in [r"([Qq][8654]_|fp?(16|32))"]:
+            for pattern in [r"([Qq][865432]_|[Ff]p?(16|32))"]:
                 files = list(model_dir.rglob("*.gguf"))
                 files = [f for f in files if f.stat().st_size > 100 * 1024 * 1024]
                 for f in sorted(files):
@@ -822,7 +850,10 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     _ = parser.add_argument(
-        "--server", type=str, default="192.168.50.5", help="Server address to connect to"
+        "--server",
+        type=str,
+        default="192.168.50.5",
+        help="Server address to connect to",
     )
     _ = parser.add_argument(
         "--port", type=int, default=8080, help="Server port to connect to"
@@ -830,9 +861,7 @@ def main():
     _ = parser.add_argument(
         "--protocol", type=str, default="http", help="Server protocol (http or https)"
     )
-    _ = parser.add_argument(
-        "--prefix", type=str, default="", help="Server API prefix"
-    )
+    _ = parser.add_argument("--prefix", type=str, default="", help="Server API prefix")
     _ = parser.add_argument(
         "--api-key", type=str, default="sk-1234", help="API Key to use with server"
     )
@@ -892,6 +921,9 @@ def main():
     _ = subparsers.add_parser("gptel", help="Generate GPTel configuration")
     _ = subparsers.add_parser(
         "gptel-litellm", help="Generate GPTel LiteLLM configuration"
+    )
+    _ = subparsers.add_parser(
+        "litellm", help="Generate LiteLLM configuration"
     )
     _ = subparsers.add_parser("status", help="Check llama-swap status")
     _ = subparsers.add_parser("unload", help="Unload current model")
@@ -955,8 +987,8 @@ def main():
     elif command == "llama-swap":
         manager.run_llama_swap()
     elif command == "models":
-        for model in manager.get_models():
-            print(model)
+        for model, kinds in manager.get_models().items():
+            print(f"{kinds} {model}")
     elif command == "huggingface-models":
         for model in manager.get_huggingface_models():
             print(model)
@@ -967,6 +999,8 @@ def main():
         print(manager.generate_gptel_config())
     elif command == "gptel-litellm":
         print(manager.generate_gptel_litellm_config())
+    elif command == "litellm":
+        print(manager.generate_litellm_config())
     elif command == "status":
         manager.get_status()
     elif command == "unload":
