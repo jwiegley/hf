@@ -647,8 +647,7 @@ models:
         try:
             response = requests.get(f"{self.api_base()}/logs/stream", stream=True)
             for line in response.iter_lines():
-                if line:
-                    print(line.decode("utf-8"))
+                print(line)
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
 
