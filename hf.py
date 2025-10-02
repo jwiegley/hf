@@ -851,7 +851,7 @@ def main():
     _ = parser.add_argument(
         "--server",
         type=str,
-        default="192.168.50.5",
+        default="192.168.1.4",
         help="Server address to connect to",
     )
     _ = parser.add_argument(
