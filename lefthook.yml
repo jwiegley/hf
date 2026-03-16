@@ -1,0 +1,21 @@
+pre-commit:
+  parallel: true
+  commands:
+    ruff-format:
+      glob: "*.py"
+      run: ruff format --check {staged_files}
+    ruff-lint:
+      glob: "*.py"
+      run: ruff check {staged_files}
+    typecheck:
+      glob: "*.py"
+      run: basedpyright hf.py
+    pytest:
+      glob: "*.py"
+      run: python -m pytest tests/ -x -q --cov --cov-report=term-missing
+    benchmark:
+      glob: "*.py"
+      run: "files=$(find .benchmarks -name '*.json' 2>/dev/null) && test -n \"$files\" && python -m pytest tests/test_benchmark.py -o 'addopts=' --benchmark-only --benchmark-compare --benchmark-compare-fail=min:5% || true"
+    nix-build:
+      glob: "*.{py,nix,toml}"
+      run: nix build --no-warn-dirty 2>&1
