@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pyright: reportAny=false
+# basedpyright: reportAny=false
 """
 Model management utility for GGUF, MLX, LMStudio, and Ollama models.
 Handles downloading, importing, configuration, and serving of AI models.
@@ -54,7 +54,7 @@ class ModelManager:
 
     def __init__(self):
         """Initialize paths and configuration."""
-        self.procotol = "http"
+        self.protocol = "http"
         self.server = "127.0.0.1"
         self.port = 8080
         self.prefix = ""
@@ -86,7 +86,7 @@ class ModelManager:
         if not csv_file.exists():
             return None
 
-        with open(csv_file, "r") as f:
+        with open(csv_file) as f:
             reader = csv.reader(f)
             for row in reader:
                 if len(row) > key_column and row[key_column] == search_key:
@@ -411,7 +411,7 @@ class ModelManager:
         --no-webui
         --offline
         --port ${{PORT}}
-        --model {gguf} {' '.join(args)}
+        --model {gguf} {" ".join(args)}
     checkEndpoint: /health"""
 
             if config and config.aliases:
@@ -466,7 +466,7 @@ models:
       {mlx_lm} server
         --host 127.0.0.1 --port ${{PORT}}
         --max-tokens 8192
-        --model {model} {' '.join(args)}
+        --model {model} {" ".join(args)}
     checkEndpoint: /health
 """
             )
@@ -614,8 +614,8 @@ models:
         """Generate LiteLLM configuration."""
         models: list[str] = sorted(self.get_models().keys())
         return "\n".join(
-                [
-                    f"""
+            [
+                f"""
   - model_name: hera/{model}
     litellm_params:
       model: openai/{model}
@@ -624,8 +624,9 @@ models:
     model_info:
       description: ""
       supports_reasoning: True"""
-                    for model in models
-                ])
+                for model in models
+            ]
+        )
 
     def get_status(self) -> None:
         """Get llama-swap status."""
@@ -745,7 +746,7 @@ models:
         # Get all files > 100MB, excluding .git
         large_files: list[Path] = []
         for file in Path(".").rglob("*"):
-            if file.is_file() and not ".git" in file.parts:
+            if file.is_file() and ".git" not in file.parts:
                 if file.stat().st_size > 100 * 1024 * 1024:
                     large_files.append(file.relative_to("."))
 
@@ -921,9 +922,7 @@ def main():
     _ = subparsers.add_parser(
         "gptel-litellm", help="Generate GPTel LiteLLM configuration"
     )
-    _ = subparsers.add_parser(
-        "litellm", help="Generate LiteLLM configuration"
-    )
+    _ = subparsers.add_parser("litellm", help="Generate LiteLLM configuration")
     _ = subparsers.add_parser("status", help="Check llama-swap status")
     _ = subparsers.add_parser("unload", help="Unload current model")
     _ = subparsers.add_parser("logs", help="Stream llama-swap logs")
